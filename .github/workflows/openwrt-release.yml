@@ -23,13 +23,13 @@ jobs:
       hiddify_version: ${{ steps.out.outputs.hiddify_version }}
       singbox_version: ${{ steps.out.outputs.singbox_version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           repository: ${{ github.event_name == 'workflow_dispatch' && 'hiddify/hiddify-core' || github.repository }}
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag-name || github.ref_name }}
           fetch-depth: 0
           submodules: 'recursive'
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ^1.25.6
       - name: Set version
@@ -67,14 +67,14 @@ jobs:
     env:
       CODE_VERSION: "-X github.com/hiddify/hiddify-core/v2/hcommon/constants.Version=${{ needs.calculate-version.outputs.hiddify_version }} -X github.com/sagernet/sing-box/constant.Version=${{ needs.calculate-version.outputs.singbox_version }}"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           repository: ${{ github.event_name == 'workflow_dispatch' && 'hiddify/hiddify-core' || github.repository }}
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag-name || github.ref_name }}
           fetch-depth: 0
           submodules: 'recursive'
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
 
@@ -91,7 +91,7 @@ jobs:
 
       - name: Cache Chromium toolchain
         if: matrix.naive
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/cronet-go/naiveproxy/src/third_party/llvm-build/Release+Asserts
@@ -140,7 +140,7 @@ jobs:
           sudo apt-get install -y upx-ucl
           upx --best --brute dist/hiddify-core || echo "UPX compression skipped (unsupported arch)"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.name }}
           path: dist/hiddify-core
@@ -168,14 +168,14 @@ jobs:
           - name: linux-mips64le-sf
             openwrt: "mips64el_mips64r2"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           repository: ${{ github.event_name == 'workflow_dispatch' && 'hiddify/hiddify-core' || github.repository }}
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag-name || github.ref_name }}
           submodules: 'recursive'
 
       - name: Download binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: binary-${{ matrix.name }}
           path: dist/
@@ -220,7 +220,7 @@ jobs:
               dist/hiddify-core=/usr/bin/hiddify-core
           done
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: packages-${{ matrix.name }}
           path: |
@@ -233,20 +233,20 @@ jobs:
     permissions: write-all
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: packages-*
           merge-multiple: true
           path: packages/
 
-      - uses: softprops/action-gh-release@v1
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag-name || github.ref_name }}
           files: packages/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: geekyeggo/delete-artifact@v5
+      - uses: geekyeggo/delete-artifact@v6
         with:
           name: |
             binary-*
