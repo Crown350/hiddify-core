@@ -1,0 +1,253 @@
+name: OpenWRT Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+.*'
+  workflow_dispatch:
+    inputs:
+      tag-name:
+        description: 'Release tag (e.g. v2.0.0)'
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  calculate-version:
+    runs-on: ubuntu-latest
+    outputs:
+      hiddify_version: ${{ steps.out.outputs.hiddify_version }}
+      singbox_version: ${{ steps.out.outputs.singbox_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event_name == 'workflow_dispatch' && 'hiddify/hiddify-core' || github.repository }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag-name || github.ref_name }}
+          fetch-depth: 0
+          submodules: 'recursive'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ^1.25.6
+      - name: Set version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "hiddify_version=${{ inputs.tag-name }}" >> "$GITHUB_ENV"
+          else
+            echo "hiddify_version=${{ github.ref_name }}" >> "$GITHUB_ENV"
+          fi
+      - name: Calculate singbox version
+        run: |
+          cd hiddify-sing-box
+          go run -v ./cmd/internal/read_tag --ci --nightly
+      - id: out
+        run: |
+          echo "hiddify_version=${hiddify_version}" >> "$GITHUB_OUTPUT"
+          echo "singbox_version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: [calculate-version]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Naive outbound (musl + cronet)
+          - { name: linux-amd64,       arch: amd64,    naive: true }
+          - { name: linux-arm64,       arch: arm64,    naive: true }
+          - { name: linux-386,         arch: "386",    go386: sse2,       naive: true }
+          - { name: linux-armv7,       arch: arm,      goarm: "7",        naive: true }
+          # Simple static builds (no naive outbound — cronet has no MIPS support)
+          - { name: linux-mipsle-hf,   arch: mipsle,   gomips: hardfloat }
+          - { name: linux-mips64-sf,   arch: mips64,   gomips: softfloat }
+          - { name: linux-mips64le-sf, arch: mips64le, gomips: softfloat }
+    env:
+      CODE_VERSION: "-X github.com/hiddify/hiddify-core/v2/hcommon/constants.Version=${{ needs.calculate-version.outputs.hiddify_version }} -X github.com/sagernet/sing-box/constant.Version=${{ needs.calculate-version.outputs.singbox_version }}"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event_name == 'workflow_dispatch' && 'hiddify/hiddify-core' || github.repository }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag-name || github.ref_name }}
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Clone cronet-go
+        if: matrix.naive
+        run: |
+          set -xeuo pipefail
+          CRONET_GO_VERSION=$(cat hiddify-sing-box/.github/CRONET_GO_VERSION)
+          git init ~/cronet-go
+          git -C ~/cronet-go remote add origin https://github.com/sagernet/cronet-go.git
+          git -C ~/cronet-go fetch --depth=1 origin "$CRONET_GO_VERSION"
+          git -C ~/cronet-go checkout FETCH_HEAD
+          git -C ~/cronet-go submodule update --init --recursive --depth=1
+
+      - name: Cache Chromium toolchain
+        if: matrix.naive
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/cronet-go/naiveproxy/src/third_party/llvm-build/Release+Asserts
+            ~/cronet-go/naiveproxy/src/out/sysroot-build
+          key: chromium-toolchain-${{ matrix.arch }}-musl-${{ hashFiles('hiddify-sing-box/.github/CRONET_GO_VERSION') }}
+
+      - name: Download Chromium toolchain
+        if: matrix.naive
+        run: |
+          cd ~/cronet-go
+          go run ./cmd/build-naive --target=linux/${{ matrix.arch }} --libc=musl download-toolchain
+
+      - name: Set Chromium toolchain environment
+        if: matrix.naive
+        run: |
+          cd ~/cronet-go
+          go run ./cmd/build-naive --target=linux/${{ matrix.arch }} --libc=musl env >> "$GITHUB_ENV"
+
+      - name: Set build tags
+        run: |
+          TAGS='with_v2ray_api,with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_tailscale,with_ccm,with_ocm,tfogo_checklinkname0'
+          if [[ "${{ matrix.naive }}" == "true" ]]; then
+            TAGS="${TAGS},with_naive_outbound,with_musl"
+          fi
+          echo "BUILD_TAGS=${TAGS}" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: |
+          mkdir -p dist
+          go build -v -trimpath \
+            -o dist/hiddify-core \
+            -tags "${BUILD_TAGS}" \
+            -ldflags "-s -buildid= ${CODE_VERSION} -X internal/godebug.defaultGODEBUG=multipathtcp=0 -checklinkname=0" \
+            ./cmd/main/
+        env:
+          CGO_ENABLED: ${{ matrix.naive == true && '1' || '0' }}
+          GOOS: linux
+          GOARCH: ${{ matrix.arch }}
+          GO386: ${{ matrix.go386 }}
+          GOARM: ${{ matrix.goarm }}
+          GOMIPS: ${{ matrix.gomips }}
+          GOMIPS64: ${{ matrix.gomips }}
+
+      - name: Compress with UPX
+        run: |
+          sudo apt-get install -y upx-ucl
+          upx --best --brute dist/hiddify-core || echo "UPX compression skipped (unsupported arch)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.name }}
+          path: dist/hiddify-core
+          retention-days: 1
+
+  package:
+    needs: [calculate-version, build]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-amd64
+            openwrt: "x86_64"
+          - name: linux-arm64
+            openwrt: "aarch64_cortex-a53 aarch64_cortex-a72 aarch64_cortex-a76 aarch64_generic"
+          - name: linux-386
+            openwrt: "i386_pentium4"
+          - name: linux-armv7
+            openwrt: "arm_cortex-a5_vfpv4 arm_cortex-a7_neon-vfpv4 arm_cortex-a7_vfpv4 arm_cortex-a8_vfpv3 arm_cortex-a9_neon arm_cortex-a9_vfpv3-d16 arm_cortex-a15_neon-vfpv4"
+          - name: linux-mipsle-hf
+            openwrt: "mipsel_24kc_24kf"
+          - name: linux-mips64-sf
+            openwrt: "mips64_mips64r2 mips64_octeonplus"
+          - name: linux-mips64le-sf
+            openwrt: "mips64el_mips64r2"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event_name == 'workflow_dispatch' && 'hiddify/hiddify-core' || github.repository }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag-name || github.ref_name }}
+          submodules: 'recursive'
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-${{ matrix.name }}
+          path: dist/
+
+      - run: chmod +x dist/hiddify-core
+
+      - name: Install packaging tools
+        run: |
+          sudo gem install fpm
+          sudo apt-get install -y libarchive-tools
+
+      - name: Set package version
+        run: |
+          PKG_VERSION="${{ needs.calculate-version.outputs.hiddify_version }}"
+          PKG_VERSION="${PKG_VERSION//-/\~}"
+          echo "PKG_VERSION=${PKG_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Build IPK packages
+        run: |
+          set -xeuo pipefail
+          cp .fpm_openwrt .fpm
+          fpm -t deb \
+            -v "$PKG_VERSION" \
+            -p dist/openwrt.deb \
+            --architecture all \
+            dist/hiddify-core=/usr/bin/hiddify-core
+          for arch in ${{ matrix.openwrt }}; do
+            hiddify-sing-box/.github/deb2ipk.sh \
+              "$arch" dist/openwrt.deb "dist/hiddify-core_${arch}.ipk"
+          done
+          rm dist/openwrt.deb
+
+      - name: Build APK packages
+        run: |
+          set -xeuo pipefail
+          cp .fpm_openwrt .fpm
+          for arch in ${{ matrix.openwrt }}; do
+            fpm -t apk \
+              -v "$PKG_VERSION" \
+              -p "dist/hiddify-core_${arch}.apk" \
+              --architecture "$arch" \
+              dist/hiddify-core=/usr/bin/hiddify-core
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.name }}
+          path: |
+            dist/*.ipk
+            dist/*.apk
+          retention-days: 1
+
+  release:
+    needs: [calculate-version, package]
+    permissions: write-all
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: packages-*
+          merge-multiple: true
+          path: packages/
+
+      - uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag-name || github.ref_name }}
+          files: packages/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: geekyeggo/delete-artifact@v5
+        with:
+          name: |
+            binary-*
+            packages-*

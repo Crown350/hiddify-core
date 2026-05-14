@@ -1,0 +1,38 @@
+name: Check Upstream Release
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # every hour
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Get upstream latest release tag
+        id: upstream
+        run: |
+          TAG=$(gh api repos/hiddify/hiddify-core/releases/latest --jq '.tag_name')
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if already built in fork
+        id: check
+        run: |
+          RESULT=$(gh api "repos/${{ github.repository }}/releases/tags/${{ steps.upstream.outputs.tag }}" \
+            --jq '.tag_name' 2>/dev/null || echo "")
+          echo "exists=${RESULT}" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trigger OpenWRT release build
+        if: steps.check.outputs.exists == ''
+        run: |
+          gh workflow run openwrt-release.yml \
+            --repo "${{ github.repository }}" \
+            --field tag-name=${{ steps.upstream.outputs.tag }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
