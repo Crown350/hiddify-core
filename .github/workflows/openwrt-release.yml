@@ -185,7 +185,28 @@ jobs:
       - name: Install packaging tools
         run: |
           sudo gem install fpm
-          sudo apt-get install -y libarchive-tools
+          sudo apt-get install -y libarchive-tools build-essential libssl-dev lua5.1 meson ninja-build
+
+      - name: Build apk-tools
+        run: |
+          git clone --depth=1 https://github.com/alpinelinux/apk-tools.git
+          cd apk-tools
+          git fetch --depth=1 origin b5a31c0d865342ad80be10d68f1bb3d3ad9b0866
+          git checkout b5a31c0d865342ad80be10d68f1bb3d3ad9b0866
+          meson setup build \
+            -Db_lto=true \
+            -Dcompressed-help=false \
+            -Ddocs=disabled \
+            -Dhelp=enabled \
+            -Dlua_version=5.1 \
+            -Ddefault_library=static \
+            -Durl_backend=wget \
+            -Dzstd=false \
+            -Dpython=disabled \
+            -Dtests=disabled \
+            -Dcrypto_backend=openssl
+          ninja -C build
+          sudo -E meson install -C build --strip
 
       - name: Set package version
         run: |
@@ -211,14 +232,31 @@ jobs:
       - name: Build APK packages
         run: |
           set -xeuo pipefail
-          cp .fpm_openwrt .fpm
           for arch in ${{ matrix.openwrt }}; do
-            fpm -t apk \
-              -v "$PKG_VERSION" \
-              -p "dist/hiddify-core_${arch}.apk" \
-              --architecture "$arch" \
-              dist/hiddify-core=/usr/bin/hiddify-core
+            STAGING=$(mktemp -d)
+            install -Dm755 dist/hiddify-core              "$STAGING/usr/bin/hiddify-core"
+            install -Dm644 release/config/config.json     "$STAGING/etc/hiddify/config.json"
+            install -Dm644 release/config/openwrt.conf    "$STAGING/etc/config/hiddify"
+            install -Dm755 release/config/openwrt.init    "$STAGING/etc/init.d/hiddify"
+            install -Dm644 release/config/openwrt.keep    "$STAGING/lib/upgrade/keep.d/hiddify"
+            install -Dm644 LICENSE.md                     "$STAGING/usr/share/licenses/hiddify-core/LICENSE.md"
+            apk mkpkg \
+              --info "name:hiddify-core" \
+              --info "version:$PKG_VERSION" \
+              --info "description:The universal proxy platform." \
+              --info "arch:$arch" \
+              --info "origin:hiddify-core" \
+              --info "url:https://hiddify.com/" \
+              --info "maintainer:hiddify <wrt@hiddify.com>" \
+              --info "depends:ca-bundle kmod-inet-diag kmod-tun firewall4 kmod-nft-queue" \
+              --script "pre-deinstall:release/config/openwrt.prerm" \
+              ${APK_SIGNING_KEY:+--sign-key "$APK_SIGNING_KEY"} \
+              --files "$STAGING" \
+              --output "dist/hiddify-core_${arch}.apk"
+            rm -rf "$STAGING"
           done
+        env:
+          APK_SIGNING_KEY: ${{ secrets.APK_SIGNING_KEY }}
 
       - uses: actions/upload-artifact@v7.0.1
         with:
