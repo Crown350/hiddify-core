@@ -18,21 +18,26 @@
 
 ---
 
-## 🚀 Quick Setup
+## Installation
 
-Install `hiddify-core` on any Linux platform (Ubuntu, Debian, CentOS, OpenWrt, and more) with a single command:
+### 📶 OpenWRT 25.12+ (APK)
 
-```bash
-bash <(curl https://i.hiddify.com/core)
+```sh
+wget -O /tmp/hiddify-core.pub https://github.com/1andrevich/hiddify-core/releases/latest/download/hiddify-core.pub
+cp /tmp/hiddify-core.pub /etc/apk/keys/
+wget -O /tmp/hiddify-core.apk "https://github.com/1andrevich/hiddify-core/releases/latest/download/hiddify-core_$(. /etc/os-release; echo "$OPENWRT_ARCH").apk"
+apk add /tmp/hiddify-core.apk
 ```
-or 
-```bash
-bash <(curl -Ls https://raw.githubusercontent.com/hiddify/hiddify-core/main/installer.sh)
+
+### 📶 OpenWRT 24.10 (opkg)
+
+```sh
+wget -O /tmp/hiddify-core.ipk "https://github.com/1andrevich/hiddify-core/releases/latest/download/hiddify-core_$(. /etc/os-release; echo "$OPENWRT_ARCH").ipk"
+opkg update
+opkg install /tmp/hiddify-core.ipk
 ```
 
-> [!NOTE]
-> This script automatically detects your OS and architecture, installs the appropriate binary, and configures the service manager (Systemd or Procd).
-
+For manual installation or advanced configuration on OpenWrt, refer to our [OpenWrt Setup Guide](platform/wrt/README.md).
 ---
 
 ## ✨ Key Features
@@ -59,9 +64,6 @@ git clone https://github.com/hiddify/hiddify-core
 cd hiddify-core/docker
 docker-compose up -d
 ```
-
-### 📶 OpenWrt
-For manual installation or advanced configuration on OpenWrt, refer to our [OpenWrt Setup Guide](platform/wrt/README.md).
 
 ---
 
