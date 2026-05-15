@@ -271,7 +271,7 @@ jobs:
             rm -rf "$STAGING"
           done
 
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@v7
         with:
           name: packages-${{ matrix.name }}
           path: |
