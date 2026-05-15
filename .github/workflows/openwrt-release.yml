@@ -229,6 +229,16 @@ jobs:
           done
           rm dist/openwrt.deb
 
+      - name: Setup APK signing key
+        run: |
+          if [ -n "${{ secrets.APK_SIGNING_KEY }}" ]; then
+            echo "${{ secrets.APK_SIGNING_KEY }}" > /tmp/apk-signing.key
+            chmod 600 /tmp/apk-signing.key
+            echo "APK_SIGNING_KEY=/tmp/apk-signing.key" >> "$GITHUB_ENV"
+          else
+            echo "No APK_SIGNING_KEY secret set — building unsigned packages"
+          fi
+
       - name: Build APK packages
         run: |
           set -xeuo pipefail
@@ -255,8 +265,6 @@ jobs:
               --output "dist/hiddify-core_${arch}.apk"
             rm -rf "$STAGING"
           done
-        env:
-          APK_SIGNING_KEY: ${{ secrets.APK_SIGNING_KEY }}
 
       - uses: actions/upload-artifact@v7.0.1
         with:
