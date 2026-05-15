@@ -135,10 +135,10 @@ jobs:
           GOMIPS: ${{ matrix.gomips }}
           GOMIPS64: ${{ matrix.gomips }}
 
-      - name: Compress with UPX
-        run: |
-          sudo apt-get install -y upx-ucl
-          upx --best --brute dist/hiddify-core || echo "UPX compression skipped (unsupported arch)"
+ #     - name: Compress with UPX
+ #       run: |
+ #         sudo apt-get install -y upx-ucl
+ #         upx --best --brute dist/hiddify-core || echo "UPX compression skipped (unsupported arch)"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -213,13 +213,18 @@ jobs:
           PKG_VERSION="${{ needs.calculate-version.outputs.hiddify_version }}"
           PKG_VERSION="${PKG_VERSION//-/\~}"
           echo "PKG_VERSION=${PKG_VERSION}" >> "$GITHUB_ENV"
+          # APK requires version starting with a digit; strip leading v and any pre-release suffix
+          APK_PKG_VERSION="${{ needs.calculate-version.outputs.hiddify_version }}"
+          APK_PKG_VERSION="${APK_PKG_VERSION#v}"
+          APK_PKG_VERSION="${APK_PKG_VERSION%%-*}"
+          echo "APK_PKG_VERSION=${APK_PKG_VERSION}" >> "$GITHUB_ENV"
 
       - name: Build IPK packages
         run: |
           set -xeuo pipefail
           cp .fpm_openwrt .fpm
           fpm -t deb \
-            -v "$PKG_VERSION" \
+            -v "$APK_PKG_VERSION" \
             -p dist/openwrt.deb \
             --architecture all \
             dist/hiddify-core=/usr/bin/hiddify-core
@@ -252,7 +257,7 @@ jobs:
             install -Dm644 LICENSE.md                     "$STAGING/usr/share/licenses/hiddify-core/LICENSE.md"
             apk mkpkg \
               --info "name:hiddify-core" \
-              --info "version:$PKG_VERSION" \
+              --info "version:$APK_PKG_VERSION" \
               --info "description:The universal proxy platform." \
               --info "arch:$arch" \
               --info "origin:hiddify-core" \
