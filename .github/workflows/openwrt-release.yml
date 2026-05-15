@@ -135,10 +135,10 @@ jobs:
           GOMIPS: ${{ matrix.gomips }}
           GOMIPS64: ${{ matrix.gomips }}
 
-      - name: Compress with UPX
-        run: |
-          sudo apt-get install -y upx-ucl
-          upx --best --brute dist/hiddify-core || echo "UPX compression skipped (unsupported arch)"
+#      - name: Compress with UPX
+#        run: |
+#          sudo apt-get install -y upx-ucl
+#          upx --best --brute dist/hiddify-core || echo "UPX compression skipped (unsupported arch)"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -291,9 +291,14 @@ jobs:
           pattern: packages-*
           merge-multiple: true
           path: packages/
-      - name: Prepare release files
+      - name: Add APK public key to release
         run: |
-          cp .github/hiddify-core.pub packages/
+          if [ -n "${{ secrets.APK_SIGNING_KEY }}" ]; then
+            echo "${{ secrets.APK_SIGNING_KEY }}" > /tmp/apk-signing.key
+            chmod 600 /tmp/apk-signing.key
+            openssl rsa -in /tmp/apk-signing.key -pubout -out packages/hiddify-core.pub 2>/dev/null || \
+            openssl ec  -in /tmp/apk-signing.key -pubout -out packages/hiddify-core.pub 2>/dev/null || true
+          fi
 
       - uses: softprops/action-gh-release@v3
         with:
