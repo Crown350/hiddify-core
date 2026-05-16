@@ -29,7 +29,7 @@ wget -O /tmp/hiddify-core.apk "https://github.com/1andrevich/hiddify-core/releas
 apk add /tmp/hiddify-core.apk
 ```
 
-### 📶 OpenWRT 24.10 (opkg)
+### 📶 OpenWRT 23.05+ (opkg)
 
 ```sh
 wget -O /tmp/hiddify-core.ipk "https://github.com/1andrevich/hiddify-core/releases/latest/download/hiddify-core_$(. /etc/os-release; echo "$OPENWRT_ARCH").ipk"
