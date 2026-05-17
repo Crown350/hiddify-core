@@ -316,6 +316,7 @@ jobs:
   compress-upx:
     needs: [build]
     runs-on: ubuntu-latest
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -325,8 +326,6 @@ jobs:
           - linux-386
           - linux-armv7
           - linux-mipsle-hf
-          - linux-mips64-sf
-          - linux-mips64le-sf
     steps:
       - name: Download binary
         uses: actions/download-artifact@v8
@@ -351,6 +350,7 @@ jobs:
   package-upx:
     needs: [calculate-version, compress-upx]
     runs-on: ubuntu-latest
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -365,10 +365,6 @@ jobs:
             openwrt: "arm_cortex-a5_vfpv4 arm_cortex-a7_neon-vfpv4 arm_cortex-a7_vfpv4 arm_cortex-a8_vfpv3 arm_cortex-a9_neon arm_cortex-a9_vfpv3-d16 arm_cortex-a15_neon-vfpv4"
           - name: linux-mipsle-hf
             openwrt: "mipsel_24kc_24kf"
-          - name: linux-mips64-sf
-            openwrt: "mips64_mips64r2 mips64_octeonplus"
-          - name: linux-mips64le-sf
-            openwrt: "mips64el_mips64r2"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -482,6 +478,7 @@ jobs:
 
   release-upx:
     needs: [calculate-version, package-upx]
+    if: ${{ !cancelled() }}
     permissions: write-all
     runs-on: ubuntu-latest
     steps:
