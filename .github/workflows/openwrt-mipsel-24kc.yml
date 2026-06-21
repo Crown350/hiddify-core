@@ -1,0 +1,92 @@
+name: Build mipsel_24kc (softfloat)
+
+# Standalone workflow that builds a hiddify-core .ipk for OpenWrt devices
+# using the mipsel_24kc architecture (MIPS 24Kc CPU WITHOUT hardware FPU),
+# e.g. MediaTek MT7621 routers like the TP-Link Archer C6U.
+#
+# The official OpenWRT Release workflow only builds the hardfloat variant
+# (mipsel_24kc_24kf / GOMIPS=hardfloat), which crashes with
+# "Illegal instruction" on FPU-less 24Kc CPUs. This workflow builds the
+# softfloat (GOMIPS=softfloat) variant and uploads it as an artifact.
+#
+# Run it manually from the Actions tab (workflow_dispatch). The resulting
+# package is uploaded as an artifact named "hiddify-core-mipsel_24kc-ipk".
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version (digits only, e.g. 4.1.0)'
+        required: false
+        default: '4.1.0'
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-mipsel-24kc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: 'recursive'
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Set build tags
+        run: |
+          TAGS='with_v2ray_api,with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_tailscale,with_ccm,with_ocm,tfogo_checklinkname0'
+          echo "BUILD_TAGS=${TAGS}" >> "$GITHUB_ENV"
+
+      - name: Build (mipsle, softfloat)
+        run: |
+          mkdir -p dist
+          go build -v -trimpath \
+            -o dist/hiddify-core \
+            -tags "${BUILD_TAGS}" \
+            -ldflags "-s -buildid= -X internal/godebug.defaultGODEBUG=multipathtcp=0 -checklinkname=0" \
+            ./cmd/main/
+        env:
+          CGO_ENABLED: 0
+          GOOS: linux
+          GOARCH: mipsle
+          GOMIPS: softfloat
+
+      - run: chmod +x dist/hiddify-core
+
+      - name: Install packaging tools
+        run: |
+          sudo gem install fpm
+          sudo apt-get update
+          sudo apt-get install -y libarchive-tools
+
+      - name: Set package version
+        run: |
+          APK_PKG_VERSION="${{ inputs.version }}"
+          APK_PKG_VERSION="${APK_PKG_VERSION#v}"
+          APK_PKG_VERSION="${APK_PKG_VERSION%%-*}"
+          echo "APK_PKG_VERSION=${APK_PKG_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Build IPK package (mipsel_24kc)
+        run: |
+          set -xeuo pipefail
+          cp .fpm_openwrt .fpm
+          fpm -t deb \
+            -v "$APK_PKG_VERSION" \
+            -p dist/openwrt.deb \
+            --architecture all \
+            dist/hiddify-core=/usr/bin/hiddify-core
+          hiddify-sing-box/.github/deb2ipk.sh \
+            "mipsel_24kc" dist/openwrt.deb "dist/hiddify-core_mipsel_24kc.ipk"
+          rm dist/openwrt.deb
+          ls -lh dist/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hiddify-core-mipsel_24kc-ipk
+          path: dist/hiddify-core_mipsel_24kc.ipk
+          retention-days: 7
