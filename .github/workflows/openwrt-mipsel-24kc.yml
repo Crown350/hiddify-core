@@ -21,7 +21,6 @@ jobs:
         id: tag
         run: |
           VER="${{ inputs.version }}"
-          # Автоматически подставляем 'v', если юзер ввёл просто цифры
           if [[ "$VER" != v* ]]; then
             VER="v$VER"
           fi
@@ -29,7 +28,8 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          # КРИТИЧЕСКИ ВАЖНО: берем стабильный код релиза, а не сломанную ветку main
+          # Указываем брать код ИЗ ОРИГИНАЛА, где тег 100% существует
+          repository: 'hiddify/hiddify-core'
           ref: ${{ steps.tag.outputs.version }}
           submodules: 'recursive'
           fetch-depth: 0
