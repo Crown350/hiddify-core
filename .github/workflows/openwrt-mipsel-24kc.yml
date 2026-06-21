@@ -1,16 +1,13 @@
 name: Build mipsel_24kc (softfloat)
 
-# Standalone workflow that builds a hiddify-core .ipk for OpenWrt devices
-# using the mipsel_24kc architecture (MIPS 24Kc CPU WITHOUT hardware FPU),
-# e.g. MediaTek MT7621 routers like the TP-Link Archer C6U.
+# Builds a hiddify-core .ipk for OpenWrt devices on the mipsel_24kc
+# architecture (MIPS 24Kc CPU WITHOUT hardware FPU), e.g. MediaTek MT7621
+# routers like the TP-Link Archer C6U.
 #
 # The official OpenWRT Release workflow only builds the hardfloat variant
 # (mipsel_24kc_24kf / GOMIPS=hardfloat), which crashes with
-# "Illegal instruction" on FPU-less 24Kc CPUs. This workflow builds the
-# softfloat (GOMIPS=softfloat) variant and uploads it as an artifact.
-#
-# Run it manually from the Actions tab (workflow_dispatch). The resulting
-# package is uploaded as an artifact named "hiddify-core-mipsel_24kc-ipk".
+# "Illegal instruction" on FPU-less 24Kc CPUs. This builds the softfloat
+# (GOMIPS=softfloat) variant and uploads it as an artifact.
 
 on:
   workflow_dispatch:
@@ -32,6 +29,21 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: 'recursive'
+          fetch-depth: 0
+
+      # Ensure submodules (notably hiddify-sing-box) are checked out at the
+      # exact pinned commits. Without this the build fails with errors like
+      # "does not implement Config (missing method HandshakeTimeout)".
+      - name: Force-sync submodules
+        run: |
+          set -xeuo pipefail
+          git submodule sync --recursive
+          git submodule update --init --recursive --force
+          echo "---- submodule status ----"
+          git submodule status --recursive
+          echo "---- sanity check ----"
+          test -f hiddify-sing-box/go.mod && echo "hiddify-sing-box present"
+          test -f hiddify-sing-box/.github/deb2ipk.sh && echo "deb2ipk.sh present"
 
       - uses: actions/setup-go@v6
         with:
