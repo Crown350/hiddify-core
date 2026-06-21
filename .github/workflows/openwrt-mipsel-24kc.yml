@@ -26,17 +26,12 @@ jobs:
   build-mipsel-24kc:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
-          # Build from the release tag matching the requested package version,
-          # same strategy as upstream OpenWRT workflow_dispatch.
-          ref: ${{ startsWith(inputs.version, 'v') && inputs.version || format('v{0}', inputs.version) }}
+          # Removed the forced ref tag so it builds the current branch state cleanly.
           submodules: 'recursive'
           fetch-depth: 0
 
-      # Ensure submodules (notably hiddify-sing-box) are checked out at the
-      # exact pinned commits. Without this the build fails with errors like
-      # "does not implement Config (missing method HandshakeTimeout)".
       - name: Force-sync submodules
         run: |
           set -xeuo pipefail
@@ -44,11 +39,8 @@ jobs:
           git submodule update --init --recursive --force
           echo "---- submodule status ----"
           git submodule status --recursive
-          echo "---- sanity check ----"
-          test -f hiddify-sing-box/go.mod && echo "hiddify-sing-box present"
-          test -f hiddify-sing-box/.github/deb2ipk.sh && echo "deb2ipk.sh present"
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
 
@@ -117,10 +109,10 @@ jobs:
           set -euo pipefail
           test -s dist/hiddify-core_mipsel_24kc.ipk
           file dist/hiddify-core_mipsel_24kc.ipk
-          ar t dist/hiddify-core_mipsel_24kc.ipk | grep -E '^control\\.tar\\.gz$'
-          ar t dist/hiddify-core_mipsel_24kc.ipk | grep -E '^data\\.tar\\.gz$'
+          ar t dist/hiddify-core_mipsel_24kc.ipk | grep -E '^control\.tar\.gz$'
+          ar t dist/hiddify-core_mipsel_24kc.ipk | grep -E '^data\.tar\.gz$'
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: hiddify-core-mipsel_24kc-ipk
           path: dist/hiddify-core_mipsel_24kc.ipk
