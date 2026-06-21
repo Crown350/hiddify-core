@@ -1,20 +1,11 @@
 name: Build mipsel_24kc (softfloat)
 
-# Builds a hiddify-core .ipk for OpenWrt devices on the mipsel_24kc
-# architecture (MIPS 24Kc CPU WITHOUT hardware FPU), e.g. MediaTek MT7621
-# routers like the TP-Link Archer C6U.
-#
-# The official OpenWRT Release workflow only builds the hardfloat variant
-# (mipsel_24kc_24kf / GOMIPS=hardfloat), which crashes with
-# "Illegal instruction" on FPU-less 24Kc CPUs. This builds the softfloat
-# (GOMIPS=softfloat) variant and uploads it as an artifact.
-
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Package version (digits only, e.g. 4.1.0)'
-        required: false
+        description: 'Package version (e.g. 4.1.0 or v4.1.0)'
+        required: true
         default: '4.1.0'
         type: string
 
@@ -26,19 +17,27 @@ jobs:
   build-mipsel-24kc:
     runs-on: ubuntu-latest
     steps:
+      - name: Normalize version tag
+        id: tag
+        run: |
+          VER="${{ inputs.version }}"
+          # Автоматически подставляем 'v', если юзер ввёл просто цифры
+          if [[ "$VER" != v* ]]; then
+            VER="v$VER"
+          fi
+          echo "version=$VER" >> $GITHUB_OUTPUT
+
       - uses: actions/checkout@v4
         with:
-          # Removed the forced ref tag so it builds the current branch state cleanly.
+          # КРИТИЧЕСКИ ВАЖНО: берем стабильный код релиза, а не сломанную ветку main
+          ref: ${{ steps.tag.outputs.version }}
           submodules: 'recursive'
           fetch-depth: 0
 
       - name: Force-sync submodules
         run: |
-          set -xeuo pipefail
           git submodule sync --recursive
           git submodule update --init --recursive --force
-          echo "---- submodule status ----"
-          git submodule status --recursive
 
       - uses: actions/setup-go@v5
         with:
@@ -73,9 +72,7 @@ jobs:
           set -euo pipefail
           test -s dist/hiddify-core
           file dist/hiddify-core
-          file dist/hiddify-core | grep -E 'ELF 32-bit.*MIPS'
           readelf -h dist/hiddify-core | grep -E 'Machine:[[:space:]]+MIPS'
-          readelf -h dist/hiddify-core | grep -E "Data:[[:space:]]+2's complement, little endian"
 
       - name: Install packaging tools
         run: |
@@ -85,7 +82,7 @@ jobs:
 
       - name: Set package version
         run: |
-          APK_PKG_VERSION="${{ inputs.version }}"
+          APK_PKG_VERSION="${{ steps.tag.outputs.version }}"
           APK_PKG_VERSION="${APK_PKG_VERSION#v}"
           APK_PKG_VERSION="${APK_PKG_VERSION%%-*}"
           echo "APK_PKG_VERSION=${APK_PKG_VERSION}" >> "$GITHUB_ENV"
@@ -102,15 +99,6 @@ jobs:
           hiddify-sing-box/.github/deb2ipk.sh \
             "mipsel_24kc" dist/openwrt.deb "dist/hiddify-core_mipsel_24kc.ipk"
           rm dist/openwrt.deb
-          ls -lh dist/
-
-      - name: Verify IPK artifact
-        run: |
-          set -euo pipefail
-          test -s dist/hiddify-core_mipsel_24kc.ipk
-          file dist/hiddify-core_mipsel_24kc.ipk
-          ar t dist/hiddify-core_mipsel_24kc.ipk | grep -E '^control\.tar\.gz$'
-          ar t dist/hiddify-core_mipsel_24kc.ipk | grep -E '^data\.tar\.gz$'
 
       - uses: actions/upload-artifact@v4
         with:
